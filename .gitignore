@@ -1,0 +1,47 @@
+# Ambientes virtuais Python
+.venv/ 
+venv/
+env/ 
+ENV/ 
+build/ 
+develop-eggs/ 
+dist/ 
+downloads/ 
+eggs/ 
+.eggs/ 
+lib/ 
+lib64/ 
+parts/ 
+sdist/ 
+var/ 
+wheels/ 
+\*.egg-info/ 
+.installed.cfg 
+\*.egg 
+
+# Cache e Bytecode do Python 
+__pycache__/
+*.py[cod] 
+*$py.class 
+.pytest_cache/ 
+
+# Variáveis de Ambiente e Segredos (chaves de API) 
+.env 
+.env.local 
+.env.\*.local 
+
+# Banco de dados locais e arquivos temporários 
+\*.sqlite3 
+\*.sqlite 
+\*.db 
+\*.log 
+
+# Configurações de IDEs e Editores 
+.vscode/ 
+.idea/ 
+\*.swp 
+\*.swo 
+
+# Arquivos do Sistema Operacional 
+.DS\_Store 
+Thumbs.db

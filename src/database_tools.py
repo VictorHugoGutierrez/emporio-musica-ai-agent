@@ -4,6 +4,7 @@ import sqlite3
 import pandas as pd
 
 class DatabaseTools:
+  
   def __init__(self, data_dir: str = 'data'):
     self.data_dir = data_dir
     self.conn = sqlite3.connect(':memory:', check_same_thread=False)
@@ -31,10 +32,10 @@ class DatabaseTools:
 
     schemas = []
     for table_tuple in tables:
-      table_name = table_tuple
+      table_name = table_tuple[0]
       cursor.execute(f"PRAGMA table_info('{table_name}');")
       columns_info = cursor.fetchall()
-      col_names = [info[3] for info in columns_info]
+      col_names = [info[1] for info in columns_info]
       schemas.append(f"Tabela '{table_name}': {','.join(col_names)}")
 
     return '\n'.join(schemas)
