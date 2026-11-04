@@ -1,214 +1,184 @@
-# Empório da Música - Agente de Atendimento Virtual com IA
+# Empório da Música — AI Customer Support Agent
 
-Este repositório contém o protótipo do **Agente de Atendimento Virtual** para a **Empório da Música**, uma loja fictícia de instrumentos musicais localizada em Campo Grande/MS. O projeto foi desenvolvido como parte do **Desafio Técnico para AI Engineer na Artefact**.
+An intelligent, production-ready virtual customer service assistant developed for **Empório da Música**, a regional musical instrument store based in Campo Grande/MS, Brazil.
 
----
+This project was built as part of the **Artefact AI Engineer Technical Challenge**. It combines a **hybrid reasoning system** leveraging **Text-to-SQL (Function Calling)** over SQLite database records and **Retrieval-Augmented Generation (RAG)** over official store policy documents, powered by **Ollama** (`gemma4:31b-cloud` / `gemma2`).
 
-## 📋 Sumário
+--- 
 
-- [Visão Geral e Arquitetura](#-visão-geral-e-arquitetura)
-- [Fundamentação Teórica e Artigos Acadêmicos](#-fundamentação-teórica-e-artigos-acadêmicos)
-- [Estrutura do Repositório](#-estrutura-do-repositório)
-- [Configuração e Instalação](#-configuração-e-instalação)
-- [Como Executar](#-como-executar)
-- [Exemplos de Interação](#-exemplos-de-interação)
-- [Decisões Técnicas e Justificativas](#-decisões-técnicas-e-justificativas)
-- [Limitações Conhecidas e Próximos Passos](#-limitações-conhecidas-e-próximos-passos)
-- [Uso de Assistentes de IA](#-uso-de-assistentes-de-ia)
+## Key Features
 
----
+* **Autonomous Tool Routing (Function Calling)**: Dynamically selects between SQL queries (products, categories, pricing, stock, orders, promotions) and policy text retrieval based on customer intent.
+* **Text-to-SQL Engine**: Translates natural language inquiries into structured SQLite queries against an in-memory relational database hydrated from store CSVs.
+* **Store Policy RAG**: Extracts and grounds responses in official store guidelines (`políticas_da_loja.pdf`), covering returns, warranties, shipping, and store hours.
+* **Warm & Professional Persona**: Adheres to store identity—welcoming, passionate about musical instruments, helpful, and strictly scoped to instrument sales.
+* **Out-of-Scope Safeguards**: Politely declines queries regarding unrelated topics (cooking, politics) as well as non-catalog items (small accessories like single guitar strings or plectrums).
 
-## 🎯 Visão Geral e Arquitetura
+--- 
 
-O agente assume a persona de um **atendente virtual acolhedor, apaixonado por música e altamente prestativo**, capaz de tirar dúvidas de clientes em tempo real através de uma abordagem **híbrida (Function Calling + RAG)**:
+## Scientific Rationale & Academic Literature Grounding
+
+The design and system prompt architecture of this agent are strictly grounded in key principles from three landmark AI research papers:
+
+### 1. Orca: Progressive Learning from Complex Explanation Traces (*Mukherjee et al., 2023*)
+* **Core Insight**: Smaller language models achieve superior reasoning capabilities when guided by rich system instructions that incorporate step-by-step reasoning traces (*Explanation Tuning*).
+* **Implementation**: The agent's system prompt utilizes explicit Chain-of-Thought (CoT) guidelines. Before producing a user-facing response or calling a tool, the model performs intermediate logical reasoning regarding data requirements, schema constraints, and intent boundaries.
+
+### 2. Distilling Step-by-Step Outperforms Large Language Models (*Hsieh et al., 2023*)
+* **Core Insight**: Task performance and efficiency improve when intermediate reasoning rationale is decoupled from final output generation.
+* **Implementation**: The system separates the **tool invocation rationale** (e.g., constructing valid SQL queries with flexible unaccented matching or querying PDF sections) from the **final answer synthesis**, ensuring clean, human-like customer communications without exposing backend mechanics.
+
+### 3. QLoRA: Efficient Finetuning of Quantized LLMs (*Dettmers et al., 2023*)
+* **Core Insight**: Quantized 4-bit models (e.g., NF4/GGUF architectures) preserve full 16-bit reasoning capabilities and instruction-following fidelity while dramatically reducing memory consumption and inference latency.
+* **Implementation**: The project leverages Ollama's quantized models (`gemma4:31b-cloud` / `gemma2`), enabling fast, low-latency function calling and low memory footprint suitable for edge or cloud microservice deployment.
+
+--- 
+
+## Architecture & System Design
 
 ```text
-                                  +-----------------------+
-                                  |    Cliente (CLI)      |
-                                  +-----------+-----------+
-                                              |
-                                              v
-                                  +-----------+-----------+
-                                  |   EmporioAgent (LLM)  |
-                                  |  (Gemma via Ollama)   |
-                                  +-----------+-----------+
-                                              |
-                     +------------------------+------------------------+
-                     | (Function Calling)                              | (Function Calling)
-                     v                                                 v
-        +------------+------------+                       +------------+------------+
-        |   consultar_banco_sql   |                       |  consultar_politicas_loja  |
-        +------------+------------+                       +------------+------------+
-                     |                                                 |
-                     v                                                 v
-        +------------+------------+                       +------------+------------+
-        |   SQLite (Em Memória)   |                       |    RAG Manual em PDF      |
-        |  (products, orders...)  |                       |  (políticas_da_loja.pdf) |
-        +-------------------------+                       +-------------------------+
+                     ┌──────────────────────────────┐
+                     │   User Query (CLI / Main)    │
+                     └──────────────┬───────────────┘
+                                    │
+                                    ▼
+                     ┌──────────────────────────────┐
+                     │   EmporioAgent (src/agent.py) │
+                     │   - System Prompt (Persona)  │
+                     │   - Ollama Client SDK        │
+                     └──────────────┬───────────────┘
+                                    │
+           ┌────────────────────────┴────────────────────────┐
+           │ Tool Selection (Function Calling / Schema)      │
+           ▼                                                 ▼
+┌─────────────────────────────┐           ┌────────────────────────────────┐
+│    consultar_banco_sql      │           │    consultar_politicas_loja    │
+│  (src/database_tools.py)    │           │      (src/rag_tools.py)        │
+└──────────┬──────────────────┘           └──────────────┬─────────────────┘
+           │                                             │
+           ▼                                             ▼
+┌─────────────────────────────┐           ┌────────────────────────────────┐
+│  In-Memory SQLite Database  │           │   PyPDF Text Extractor &       │
+│  (products, categories,     │           │   Keyword Search Engine        │
+│  orders, promotions, etc.)  │           │   (políticas_da_loja.pdf)      │
+└──────────┬──────────────────┘           └──────────────┬─────────────────┘
+           │                                             │
+           └────────────────────────┬────────────────────┘
+                                    │
+                                    ▼
+                     ┌──────────────────────────────┐
+                     │   Final Response Synthesis    │
+                     │  (Natural Language Output)   │
+                     └──────────────┬───────────────┘
 ```
 
-1. **Atendimento a Consultas Operacionais**: Executa queries SQL dinâmicas em um banco **SQLite em memória** carregado a partir dos arquivos CSV fornecidos (`products.csv`, `orders.csv`, `customers.csv`, `promotions.csv`, etc.).
-2. **Atendimento a Dúvidas de Políticas**: Realiza busca por relevância (RAG) no manual interno `políticas_da_loja.pdf` para responder sobre trocas, devoluções, garantias e frete.
-3. **Filtro Estrito de Escopo**: Reconhece perguntas fora do catálogo comercializado (como pequenos acessórios, palhetas, cabos) ou fora do contexto de instrumentos musicais, recusando educadamente e mantendo o foco do atendimento.
+--- 
 
----
-
-## 📚 Fundamentação Teórica e Artigos Acadêmicos
-
-A solução foi projetada incorporando aprendizados dos três artigos fornecidos na documentação do desafio:
-
-### 1. **Orca: Progressive Learning from Complex Explanation Traces of GPT-4** (_Mukherjee et al., 2023_)
-
-- **Conceito Aplicado**: Uso de _System Messages_ ricas e técnicas de _Explanation Tuning_.
-- **Aplicação no Projeto**: Em vez de passar apenas regras secas ao modelo, o _System Prompt_ orienta a IA a gerar rastros de raciocínio intermediários (_Chain-of-Thought_) antes de decidir acionar uma ferramenta ou estruturar a resposta ao cliente, garantindo que o agente aprenda a lógica de tomada de decisão.
-
-### 2. **Distilling Step-by-Step! Outperforming Larger Language Models with Less Training Data** (_Hsieh et al., 2023_)
-
-- **Conceito Aplicado**: Desacoplamento entre a justificativa da tarefa (_rationales_) e a geração do resultado.
-- **Aplicação no Projeto**: A arquitetura do `EmporioAgent` separa claramente o momento de raciocinar sobre qual ferramenta invocar (`consultar_banco_sql` vs `consultar_politicas_loja`) da síntese final da resposta em linguagem natural humana.
-
-### 3. **QLoRA: Efficient Finetuning of Quantized LLMs** (_Dettmers et al., 2023_)
-
-- **Conceito Aplicado**: Eficiência de memória com quantização de 4 bits (NF4/GGUF).
-- **Aplicação no Projeto**: Escolha de modelos da família **Gemma / LLaMA 3** servidos via **Ollama**, comprovando cientificamente que modelos quantizados em 4 bits mantêm quase 100% da capacidade de raciocínio de modelos full 16-bit com uma fração do consumo de VRAM e tempo de resposta.
-
----
-
-## 📁 Estrutura do Repositório
+## Repository Structure
 
 ```text
 emporio-musica-ai-agent/
-├── data/                             # Dados fornecidos pela loja
-│   ├── products.csv
-│   ├── orders.csv
+├── data/                             # Raw CSV datasets and PDF policy manual
+│   ├── categories.csv
 │   ├── customers.csv
 │   ├── order_items.csv
+│   ├── orders.csv
+│   ├── products.csv
 │   ├── promotions.csv
-│   ├── categories.csv
 │   └── políticas_da_loja.pdf
-├── src/                              # Código fonte do Agente
-│   ├── __init__.py
-│   ├── agent.py                      # Orquestrador principal do LLM e Function Calling
-│   ├── database_tools.py             # Engine de carga e consulta ao banco SQLite
-│   ├── rag_tools.py                  # Processador e buscador do PDF de políticas
-│   └── tools_schema.py               # Definição dos schemas JSON das ferramentas
-├── scripts/                          # Scripts de teste e utilitários
-│   ├── test_ingestion.py             # Teste isolado da carga de dados (CSV e PDF)
-│   ├── test_agent.py                 # Teste isolado do fluxo do agente
-│   └── generate_dialogs.py           # Script que gera os .md de exemplo automaticamente
-├── conversas/                        # 5 Diálogos reais de exemplo (.md)
+├── src/                              # Core application source code
+│   ├── agent.py                      # Main EmporioAgent class & function calling loop
+│   ├── database_tools.py             # SQLite database loader and execution engine
+│   ├── rag_tools.py                  # PyPDF parser and policy search engine
+│   └── tools_schema.py               # JSON Schema definition for Ollama tool calling
+├── scripts/                          # Automated testing and generation scripts
+│   ├── test_ingestion.py             # Database and PDF loading verification
+│   ├── test_agent.py                 # Multi-scenario agent test suite
+│   └── generate_dialogs.py           # Automated markdown dialogue log exporter
+├── conversas/                        # Real execution dialogue logs (Markdown)
 │   ├── exemplo_1_catalogo_violoes.md
 │   ├── exemplo_2_preco_takamine.md
 │   ├── exemplo_3_politica_devolucao.md
 │   ├── exemplo_4_informacoes_loja.md
 │   └── exemplo_5_escopo_acessorios.md
-├── main.py                           # Interface de linha de comando (CLI interativa)
-├── .env.example                      # Modelo de variáveis de ambiente
-├── .gitignore                        # Proteção de credenciais e arquivos temporários
-├── requirements.txt                  # Dependências do projeto Python
-└── README.md                         # Documentação principal
+├── main.py                           # Interactive CLI interface
+├── .env.example                      # Environment variables template
+├── .gitignore                        # Git exclusion rules
+├── requirements.txt                  # Python dependencies
+└── README.md                         # Project documentation
 ```
 
----
+--- 
 
-## ⚙️ Configuração e Instalação
+## Quickstart & Installation
 
-### Pré-requisitos
+### Prerequisites
+* **Python**: 3.10 or higher
+* **Ollama**: Local Ollama instance or an active Ollama Cloud API Key
 
-- **Python 3.10** ou superior instalado.
-- **Ollama** instalado localmente ou acesso ao Ollama Cloud.
+### Step 1: Set Up Virtual Environment & Dependencies
+```bash
+python -m venv venv
+# On Windows: venv\Scripts\activate
+# On Linux/macOS: source venv/bin/activate
+pip install -r requirements.txt
+```
 
-### 1. Criar e ativar o ambiente virtual
-
-- **Linux/macOS:**
-  `python3 -m venv venv`
-  `source venv/bin/activate`
-- **Windows:**
-  `python -m venv venv`
-  `venv\Scripts\activate`
-
-### 2. Instalar as dependências
-
-`pip install -r requirements.txt`
-
-### 3. Configurar as variáveis de ambiente
-
-Copie o arquivo `.env.example` para `.env` e ajuste as variáveis conforme o seu ambiente:
-
-Conteúdo do `.env`:
-
+### Step 2: Configure Environment Variables
+Copy `.env.example` to `.env` and fill in your settings:
 ```env
-OLLAMA_API_URL=http://localhost:11434/v1
-OLLAMA_API_KEY=ollama
+OLLAMA_API_URL=https://ollama.com
+OLLAMA_API_KEY=your_key_here
 OLLAMA_MODEL=gemma4:31b-cloud
 DATA_DIR=data
 ```
 
----
+### Step 3: Run Interactive CLI Assistant
+```bash
+python main.py
+```
 
-## 🚀 Como Executar
+--- 
 
-### 1. Atendimento Interativo (CLI)
+## Running Tests & Dialogue Exporter
 
-Para conversar com o agente no terminal em tempo real:
-`python main.py`
+To verify database ingestion and PDF text extraction:
+```bash
+python -m scripts.test_ingestion
+```
 
-### 2. Teste Isolado da Ingestão de Dados
+To execute the automated test scenarios:
+```bash
+python -m scripts.test_agent
+```
 
-Para validar a criação das tabelas SQLite e leitura do PDF:
-`python -m scripts.test_ingestion`
+To regenerate the 5 Markdown dialogue logs with real tool calls:
+```bash
+python -m scripts.generate_dialogs
+```
 
-### 3. Gerar os Diálogos de Exemplo (`conversas/*.md`)
+--- 
 
-Para rodar a suíte de testes de diálogo e exportar os logs reais para a pasta `conversas/`:
-`python -m scripts.generate_dialogs`
+## Sample Dialogue Summaries
 
----
+The `conversas/` folder contains 5 validated real interaction logs:
 
-## 💬 Exemplos de Interação
+1. **`exemplo_1_catalogo_violoes.md`**: Catalog search for acoustic guitars under R$ 1,000.00. The agent executes an SQL query, returning 12 available models grouped by Nylon/Steel strings, including a 5% PIX discount note.
+2. **`exemplo_2_preco_takamine.md`**: Product inquiry for the *Takamine GD20*. SQL query fetches exact price (R$ 2,199.00) and stock level (5 units).
+3. **`exemplo_3_politica_devolucao.md`**: Inquiry about return policies. RAG retrieves Section 4 from `políticas_da_loja.pdf`, detailing 7-day right of withdrawal, 30-day store warranty, and non-returnable items.
+4. **`exemplo_4_informacoes_loja.md`**: Store location, business hours, and contact details retrieved from policy manual.
+5. **`exemplo_5_escopo_acessorios.md`**: Request for guitar strings and cables. The agent politely declines based on store guidelines restricting inventory strictly to instruments.
 
-O repositório contém 5 exemplos reais de conversa salvos na pasta `conversas/`:
+--- 
 
-1. **`exemplo_1_catalogo_violoes.md`**: Consulta de violões abaixo de R$ 1.000,00 (`consultar_banco_sql`)
-2. **`exemplo_2_preco_takamine.md`**: Consulta pontual do valor e estoque do _Takamine GD20_ (`consultar_banco_sql`)
-3. **`exemplo_3_politica_devolucao.md`**: Dúvida sobre política de trocas e devoluções (`consultar_politicas_loja`)
-4. **`exemplo_4_informacoes_loja.md`**: Consulta de endereço, telefone e horários da loja (`consultar_politicas_loja`)
-5. **`exemplo_5_escopo_acessorios.md`**: Pergunta sobre venda de cabos e palhetas avulsas (Recusa educada via Persona/System Prompt)
+## Known Limitations & Future Improvements
 
----
+1. **Text-to-SQL Robustness**: Complex nested queries are currently constrained by Ollama's schema interpretation. Future iterations could incorporate AST-based SQL sanitization or a dedicated Text-to-SQL fine-tuned adapter.
+2. **Dense Vector Search (RAG)**: The current implementation uses keyword/text retrieval. Upgrading to dense embeddings (e.g., ChromaDB or FAISS with `nomic-embed-text`) will enhance semantic retrieval for subtle policy queries.
+3. **Frontend Integration**: Transitioning the current CLI interface (`main.py`) to a Streamlit or FastAPI web dashboard.
 
-## 🛠️ Decisões Técnicas e Justificativas
+--- 
 
-- **Linguagem**: Python 3.12 (Ecossistema padrão de AI/Data Science, facilidade de manipulação de dados e integração com LLMs).
-- **Abordagem**: Agente Híbrido (Function Calling + RAG). O Function Calling provê 100% de acurácia determinística para dados tabulares (preços/estoque no SQLite), enquanto o RAG atende textos não estruturados (PDF de políticas).
-- **Framework LLM**: API nativa da SDK `ollama`. Optou-se por **não usar frameworks pesados** (como LangChain/LlamaIndex) para manter o código leve, legível, sem abstrações ocultas e com controle total sobre o loop de chamada de ferramentas.
-- **Banco Operacional**: SQLite em Memória (`:memory:`). Permite criar dinamicamente a estrutura de tabelas relacionais a partir dos CSVs no startup da aplicação com zero dependências de infraestrutura externa.
-- **Interface**: CLI (Linha de Comando Interativa). O foco da avaliação é a inteligência e orquestração do agente. A CLI fornece feedback instantâneo e exibe a transparência do acionamento de ferramentas.
-- **Persistência de Histórico**: Sessão em Memória (`self.messages`). Mantém o contexto de conversação durante toda a sessão do cliente no terminal.
+## AI Assistant Disclosure
 
----
-
-## 🔮 Limitações Conhecidas e Próximos Passos
-
-Caso houvesse mais tempo de desenvolvimento, as seguintes melhorias seriam priorizadas:
-
-1. **Busca Vetorial Densa (Vector DB)**: Substituir a busca por palavras-chave/relevância no PDF por um banco vetorial local (como **ChromaDB** ou **FAISS**) com embeddings multilíngues.
-2. **Text-to-SQL Avançado**: Implementar uma camada de validação e sanitização com _AST Parser_ (ex: `sqlglot`) para validar a sintaxe do SQL gerado pela IA antes da execução no SQLite.
-3. **Interface Gráfica Web**: Criar um painel moderno usando **Streamlit** ou **FastAPI + React** para simular uma janela de chat de e-commerce real.
-4. **Persistência de Sessão**: Salvar o histórico de conversas dos clientes em um banco de dados relacional ou Redis para permitir a retomada de atendimento em diferentes momentos.
-
----
-
-## 🤖 Uso de Assistentes de IA
-
-Durante o desenvolvimento deste projeto, utilizou-se o **Gemini Notebook** como workbench e parceiro de engenharia. A ferramenta foi empregada para:
-
-- **Inspeção e Sanitização de Dados**: Análise do esquema das colunas dos CSVs para criar as regras de mapeamento no _System Prompt_.
-- **Aceleração do Prototipamento**: Geração inicial dos scripts de boilerplate e formatação dos arquivos `.md`.
-- **Revisão de Código e Testes**: Identificação e correção de divergências de tipos no SQLite.
-
-Toda a lógica de orquestração, decisão arquitetural, prompt engineering e validação das respostas foi desenhada e guiada pelo engenheiro responsável.
-
----
-
-_Empório da Música — Sua música começa aqui. 🎶_
+In accordance with transparency guidelines, **Gemini Notebook** was utilized as an agentic workbench during development to assist with data exploration, schema validation, paper synthesis, and rapid prototyping of script structures. All architectural decisions, code integrations, and prompt engineering strategies were reviewed and verified against the challenge specifications.
